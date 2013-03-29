@@ -7,9 +7,23 @@
 #define incrFM    200000            // FM Channel Increment in USA
 // define incrFM   100000           // FM Channel Increment - certain countries.
 // define incrFM    50000           // FM Channel Increment - certain countries...
+#define encoderPinA  2
+#define encoderPinB  3
+#define buttonPin 13
+
+int encoderPos = 0;
+int buttonState;
+int lastButtonState = LOW;
+long lastDebounceTime= 0;
+long debounceDelay = 50;
 
 byte number[] = {
   15, 8, 8, 7};
+byte ls247pins[] = {
+  4, 5, 6, 7};
+byte anodepins[] = {
+  9, 10, 11, 12};
+byte dp = 8; // decimal point
 
 int serialCount = 0;
 int serialArray[2];
@@ -24,6 +38,16 @@ void setup() {
 }
 
 void initRadio() {
+  pinMode(encoderPinA, INPUT_PULLUP);
+  pinMode(encoderPinB, INPUT_PULLUP);
+  pinMode(buttonPin, INPUT_PULLUP);
+  for (int i=0; i<4; i++) {
+    pinMode(ls247pins[i],OUTPUT);
+    pinMode(anodepins[i],OUTPUT);
+  }
+  pinMode(dp, OUTPUT);  
+  digitalWrite(dp, HIGH);
+  attachInterrupt(0, doEncoder, CHANGE);  // encoder pin on interrupt 0 - pin 2
   Wire.begin();                       // join i2c bus as master
   transmitter_standby(frequency);
   delay(2000);
@@ -32,6 +56,62 @@ void initRadio() {
 
 void loop() {
   check_serial();
+}
+
+void readEncoder() {
+  int reading = digitalRead(buttonPin);
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
+  }
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    buttonState = reading;
+  }
+  if(buttonState == LOW) {
+
+    Serial.println("Pressed");
+    if ( gOnAir ) {
+      transmitter_standby( frequency );
+      buttonState = HIGH;
+    }
+    else {
+      set_freq( frequency );
+      // Serial.println(frequency);
+      delay(1000);
+      buttonState = HIGH;
+    }
+
+  }
+  lastButtonState = reading;
+}
+
+void print_lcd_frequency(long input) {
+  int freq;
+
+  freq = (int) (input / 100000);
+  number[0] = freq / 1000; // should be 0 or 1
+  if (number[0] == 0) number[0] = 15; // display blank LCD character
+  freq = freq % 1000;
+  number[1] = freq / 100;
+  freq = freq % 100;
+  number[2] = freq / 10;
+  freq = freq % 10;
+  number[3] = freq;
+}
+
+void doEncoder() {
+  /* If pinA and pinB are both high or both low, it is spinning
+   * forward. If they're different, it's going backward.
+   */
+  if (digitalRead(encoderPinA) == digitalRead(encoderPinB)) {
+    frequency -= incrFM; 
+    delay(200);
+    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range...
+  } 
+  else {
+    frequency += incrFM; 
+    delay(200);
+    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range...
+  }
 }
 
 
@@ -155,6 +235,7 @@ void check_serial() {
 
   }
 }
+
 
 
 
