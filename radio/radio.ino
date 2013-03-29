@@ -73,7 +73,7 @@ void initRadio() {
 }
 
 void loop() {
-  check_serial();
+  checkSerial();
 }
 
 //////////////////////
@@ -103,22 +103,25 @@ long loadFrequency() {
 }
 
 void readEncoder() {
-  int reading = digitalRead(buttonPin);
+  int reading = digitalRead(buttonPin); // read encoder button pin
   if (reading != lastButtonState) {
-    lastDebounceTime = millis();
+    lastDebounceTime = millis(); // start debouncing
   }
   if ((millis() - lastDebounceTime) > debounceDelay) {
-    buttonState = reading;
+    buttonState = reading; // we're past the debounce period, so read the button press
   }
-  if(buttonState == LOW) {
-
-    Serial.println("Pressed");
-    if ( gOnAir ) {
-      transmitter_standby( frequency );
+  // when the button is pressed
+  if (buttonState == LOW) {
+    // Serial.println("Pressed");
+    // go into standby
+    if (gOnAir) {
+      transmitter_standby(frequency);
       buttonState = HIGH;
     }
+    // then set the new frequency
     else {
-      set_freq( frequency );
+      set_freq(frequency);
+      saveFrequency( frequency ); // save the Frequency to EEPROM Memory
       // Serial.println(frequency);
       delay(1000);
       buttonState = HIGH;
@@ -141,37 +144,17 @@ void print_lcd_frequency(long input) {
   number[3] = freq;
 }
 
-void doEncoder() {
-  /* If pinA and pinB are both high or both low, it is spinning
-   * forward. If they're different, it's going backward.
-   */
-  if (digitalRead(encoderPinA) == digitalRead(encoderPinB)) {
-    frequency -= incrFM; 
-    delay(200);
-    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range...
-  } 
-  else {
-    frequency += incrFM; 
-    delay(200);
-    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range...
-  }
-}
-
 
 void transmitter_setup(long initFrequency) {
   i2c_send(0x0E, B00000101); //Software reset
-
   i2c_send(0x01, B10110100); //Register 1: forced subcarrier, pilot tone on
-
   i2c_send(0x02, B00000011); //Register 2: Unlock detect off, 2mW Tx Power
 
   set_freq( initFrequency);
 
   //i2c_send(0x00, B10100001); //Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power on
   i2c_send(0x00, B00100001); //Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power on
-
   i2c_send(0x0E, B00000101); //Software reset
-
   i2c_send(0x06, B00011110); //Register 6: charge pumps at 320uA and 80 uA
 }
 
@@ -187,7 +170,7 @@ void set_freq(long aFrequency) {
   int new_frequency;
 
   // New Range Checking... Implement the (experimentally determined) VFO bands:
-  if (aFrequency < 88500000) {                       // Band 3
+  if (aFrequency < 88500000) {                      // Band 3
     i2c_send(0x08, B00011011);
     // Serial.println("Band 3");
   }  
@@ -195,7 +178,7 @@ void set_freq(long aFrequency) {
     i2c_send(0x08, B00011010);
     // Serial.println("Band 2");
   }
-  else if (aFrequency < 103000000) {                  // Band 1 
+  else if (aFrequency < 103000000) {                // Band 1 
     i2c_send(0x08, B00011001);
     // Serial.println("Band 1");
   }
@@ -205,12 +188,11 @@ void set_freq(long aFrequency) {
     // Serial.println("Band 0");
   }
 
-
   new_frequency = (aFrequency + 304000) / 8192;
-  byte reg3 = new_frequency & 255;                  //extract low byte of frequency register
-  byte reg4 = new_frequency >> 8;                   //extract high byte of frequency register
-  i2c_send(0x03, reg3);                             //send low byte
-  i2c_send(0x04, reg4);                             //send high byte
+  byte reg3 = new_frequency & 255;                  // extract low byte of frequency register
+  byte reg4 = new_frequency >> 8;                   // extract high byte of frequency register
+  i2c_send(0x03, reg3);                             // send low byte
+  i2c_send(0x04, reg4);                             // send high byte
 
   // Retain old 'band set' code for reference....  
   // if (new_frequency <= 93100000) { i2c_send(0x08, B00011011); }
@@ -218,12 +200,12 @@ void set_freq(long aFrequency) {
   // if (new_frequency <= 99100000) { i2c_send(0x08, B00011001); }
   // if (new_frequency >  99100000) { i2c_send(0x08, B00011000); }
 
-  i2c_send(0x0E, B00000101);                        //software reset  
+  i2c_send(0x0E, B00000101);                        // software reset  
 
   // Serial.print("Frequency changed to ");
   // Serial.println(aFrequency, DEC);
 
-  //i2c_send(0x00, B10100001); //Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power ON
+  // i2c_send(0x00, B10100001); //Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power ON
   i2c_send(0x00, B00100001); //Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power ON
 
   gOnAir = true;
@@ -237,7 +219,7 @@ void i2c_send(byte reg, byte data) {
   delay(5);                                       // allow register to set
 }
 
-void check_serial() {
+void checkSerial() {
   if (Serial.available() > 0) {
     int inByte = Serial.read(); // read incoming message
     // set transmitter into standby mode
@@ -255,6 +237,7 @@ void check_serial() {
         long tempFrequency = left + (long) serialArray[1];
         frequency = tempFrequency * 10000;
         set_freq(frequency);
+        saveFrequency(frequency); // save the Frequency to EEPROM Memory
         // write the incoming messages for debugging in Max
         Serial.write(serialArray[0]);
         Serial.write(serialArray[1]);
@@ -262,6 +245,25 @@ void check_serial() {
         serialCount = 0;
       }
     }
+  }
+}
+
+///////////////
+// INTERRUPT //
+///////////////
+
+void doEncoder() {
+  // If pinA and pinB are both high or both low, it is spinning
+  // forward. If they're different, it's going backward.
+  if (digitalRead(encoderPinA) == digitalRead(encoderPinB)) {
+    frequency -= incrFM; 
+    delay(200);
+    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range
+  } 
+  else {
+    frequency += incrFM; 
+    delay(200);
+    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range
   }
 }
 
