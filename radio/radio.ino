@@ -1,12 +1,18 @@
-// ECM FM Transmitter
+/** 
+ * ECM FM Transmitter
+ *
+ *
+ * A lot of code and starting points for the physical connections
+ * came from http://www.km5z.us/FM-Stereo-Broadcaster.php
+ *
+ */
 
 #include <Wire.h>
+#include <EEPROM.h>
 
 #define topFM  107900000            // Top of the FM Dial Range in USA
 #define botFM   87500000            // Bottom of the FM Dial Range in USA
 #define incrFM    200000            // FM Channel Increment in USA
-// define incrFM   100000           // FM Channel Increment - certain countries.
-// define incrFM    50000           // FM Channel Increment - certain countries...
 #define encoderPinA  2
 #define encoderPinB  3
 #define buttonPin 13
@@ -38,6 +44,18 @@ void setup() {
 }
 
 void initRadio() {
+  // Attempt to read the last saved frequency from EEPROM
+  newFrequency = loadFrequency();
+  // Test if outside our FM Range...
+  if ( newFrequency < botFM || newFrequency > topFM ) {
+    // Sorry - haven't saved before - use the default.
+    frequency = 97300000;
+  }
+  else {
+    // We have a valid frequency!
+    frequency = newFrequency;
+  }
+
   pinMode(encoderPinA, INPUT_PULLUP);
   pinMode(encoderPinB, INPUT_PULLUP);
   pinMode(buttonPin, INPUT_PULLUP);
@@ -56,6 +74,32 @@ void initRadio() {
 
 void loop() {
   check_serial();
+}
+
+//////////////////////
+// EEPROM FUNCTIONS //
+//////////////////////
+
+void saveFrequency(long aFrequency) {
+  long memFrequency = 0;                   // For use in Read / Write to EEProm
+
+  //Serial.print( "Saving: " );
+  //Serial.println(aFrequency, DEC);
+
+  memFrequency = aFrequency / 10000;
+  EEPROM.write(0, memFrequency / 256);   // right-most byte
+  EEPROM.write(1, memFrequency - (memFrequency / 256) * 256);   // next to right-most byte
+}
+
+long loadFrequency() {
+  long memFrequency = 0;                   // For use in Read / Write to EEProm
+
+  memFrequency = EEPROM.read(0) * 256 + EEPROM.read(1);
+  memFrequency *= 10000;
+
+  //Serial.print("Retrieving: " );
+  //Serial.println(memFrequency, DEC);
+  return memFrequency;
 }
 
 void readEncoder() {
@@ -79,7 +123,6 @@ void readEncoder() {
       delay(1000);
       buttonState = HIGH;
     }
-
   }
   lastButtonState = reading;
 }
@@ -115,8 +158,7 @@ void doEncoder() {
 }
 
 
-void transmitter_setup( long initFrequency )
-{
+void transmitter_setup(long initFrequency) {
   i2c_send(0x0E, B00000101); //Software reset
 
   i2c_send(0x01, B10110100); //Register 1: forced subcarrier, pilot tone on
@@ -184,12 +226,10 @@ void set_freq(long aFrequency) {
   //i2c_send(0x00, B10100001); //Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power ON
   i2c_send(0x00, B00100001); //Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power ON
 
-
   gOnAir = true;
 }
 
-void i2c_send(byte reg, byte data)
-{ 
+void i2c_send(byte reg, byte data) { 
   Wire.beginTransmission(B1100111);               // transmit to device 1100111
   Wire.write(reg);                                 // sends register address
   Wire.write(data);                                // sends register data
@@ -199,16 +239,10 @@ void i2c_send(byte reg, byte data)
 
 void check_serial() {
   if (Serial.available() > 0) {
-    int inByte = Serial.read();
-    // set random frequency
-    /*
-    if (inByte == 255) {
-     transmitter_standby(frequency);
-     
-     frequency = tempFrequency;
-     set_freq(frequency);
-     }
-     */
+    int inByte = Serial.read(); // read incoming message
+    // set transmitter into standby mode
+    if (inByte == 254) transmitter_standby(frequency);
+    // change the transmission frequency
     if (inByte == 255) serialCount = 0;
     // set incoming byte into a temporary array and move through it
     // these values will be reassigned
@@ -221,26 +255,14 @@ void check_serial() {
         long tempFrequency = left + (long) serialArray[1];
         frequency = tempFrequency * 10000;
         set_freq(frequency);
+        // write the incoming messages for debugging in Max
         Serial.write(serialArray[0]);
         Serial.write(serialArray[1]);
         // reset the serial count to receive the next message
         serialCount = 0;
       }
     }
-
-    // set transmitter into standby mode
-    if (inByte == 254) {
-      transmitter_standby(frequency);
-    }
-
   }
 }
-
-
-
-
-
-
-
 
 
