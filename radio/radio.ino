@@ -2,8 +2,7 @@
  * ECM FM Transmitter
  *
  *
- * A lot of code and starting points for the physical connections
- * came from http://www.km5z.us/FM-Stereo-Broadcaster.php
+ * A lot of code and circuit was guided by http://www.km5z.us/FM-Stereo-Broadcaster.php
  *
  */
 
@@ -66,7 +65,7 @@ void loop() {
 void initRadio() {
   // attempt to read the last saved frequency from EEPROM
   newFrequency = loadFrequency();
-  // test if outside our FM Range...
+  // test if outside the FM Range
   if (newFrequency < botFM || newFrequency > topFM) frequency = initialFrequency; // haven't saved before, use the default.
   else frequency = newFrequency; // we have a valid frequency!
 
