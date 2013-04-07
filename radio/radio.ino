@@ -12,9 +12,9 @@
 #define topFM  107900000 // top of the FM range
 #define botFM   87500000 // bottom of the FM range
 #define incrFM    200000 // FM channel increment
-#define encoderPinA 2
-#define encoderPinB 3
-#define buttonPin 13
+#define encoderPinA 3
+#define encoderPinB 2
+#define encoderSwitch 4
 
 int encoderPos = 0; // initial encoder position
 int lastButtonState = LOW; // initial button state
@@ -22,13 +22,13 @@ int buttonState; // current button state
 long lastDebounceTime = 0; // temporary debounce time storage
 long debounceDelay = 50; // debounce time
 
-byte number[] = { // number to be displayed on the 7 segment display
-  15, 8, 8, 7};
+byte number[4]; // = { // number to be displayed on the 7 segment display
+  // 15, 15, 15, 7};
 byte ls247pins[] = {
-  4, 5, 6, 7};
+  12, 10, 8, 6};
 byte anodepins[] = {
-  9, 10, 11, 12};
-byte dp = 8; // decimal point
+  13, 9, 11, 7};
+byte dp = 5; // decimal point
 
 // for parsing incoming serial messages
 int serialArray[2];
@@ -51,8 +51,8 @@ void setup() {
 void loop() {
   readEncoder();
   // Serial.println( frequency, DEC );
-  print_lcd_frequency(frequency);
-  for (int i=0; i<4; i++) {
+  setDisplayFrequency(frequency);
+  for (int i = 0; i < 4; i++) {
     led7segWriteDigit(i, number[i]);
   }
   checkSerial();
@@ -69,13 +69,13 @@ void initRadio() {
   if (newFrequency < botFM || newFrequency > topFM) frequency = initialFrequency; // haven't saved before, use the default.
   else frequency = newFrequency; // we have a valid frequency!
 
-  // set pins and stuff
+  // set pin types
   pinMode(encoderPinA, INPUT_PULLUP);
   pinMode(encoderPinB, INPUT_PULLUP);
-  pinMode(buttonPin, INPUT_PULLUP);
-  for (int i=0; i<4; i++) {
-    pinMode(ls247pins[i],OUTPUT);
-    pinMode(anodepins[i],OUTPUT);
+  pinMode(encoderSwitch, INPUT_PULLUP);
+  for (int i = 0; i < 4; i++) {
+    pinMode(ls247pins[i], OUTPUT);
+    pinMode(anodepins[i], OUTPUT);
   }
   pinMode(dp, OUTPUT);  
   digitalWrite(dp, HIGH);
@@ -90,10 +90,8 @@ void initRadio() {
 void checkSerial() {
   if (Serial.available() > 0) {
     int inByte = Serial.read(); // read incoming message
-    // set transmitter into standby mode
-    if (inByte == 254) transmitter_standby(frequency);
-    // change the transmission frequency
-    if (inByte == 255) serialCount = 0;
+    if (inByte == 254) transmitter_standby(frequency); // set transmitter into standby mode
+    if (inByte == 255) serialCount = 0; // change the transmission frequency
     // set incoming byte into a temporary array and move through it
     // these values will be reassigned
     else {
@@ -101,11 +99,12 @@ void checkSerial() {
       serialCount++; 
       if (serialCount == 2) {
         transmitter_standby(frequency);
+        // parse incoming numbers from Max and set that as the new frequency
         int left = serialArray[0] * 100;
         long tempFrequency = left + (long) serialArray[1];
         frequency = tempFrequency * 10000;
         set_freq(frequency);
-        saveFrequency(frequency); // save the Frequency to EEPROM Memory
+        saveFrequency(frequency); // save the frequency to EEPROM
         // write the incoming messages for debugging in Max
         Serial.write(serialArray[0]);
         Serial.write(serialArray[1]);
@@ -117,7 +116,7 @@ void checkSerial() {
 }
 
 void readEncoder() {
-  int reading = digitalRead(buttonPin); // read encoder button pin
+  int reading = digitalRead(encoderSwitch); // read encoder button pin
   if (reading != lastButtonState) {
     lastDebounceTime = millis(); // start debouncing
   }
@@ -126,7 +125,6 @@ void readEncoder() {
   }
   // when the button is pressed
   if (buttonState == LOW) {
-    // Serial.println("Pressed");
     // go into standby
     if (gOnAir) {
       transmitter_standby(frequency);
@@ -136,7 +134,6 @@ void readEncoder() {
     else {
       set_freq(frequency);
       saveFrequency(frequency); // save the Frequency to EEPROM Memory
-      // Serial.println(frequency);
       delay(1000);
       buttonState = HIGH;
     }
@@ -144,7 +141,8 @@ void readEncoder() {
   lastButtonState = reading;
 }
 
-void print_lcd_frequency(long input) {
+// display frequency on 7 segment display
+void setDisplayFrequency(long input) {
   int freq;
 
   freq = (int) (input / 100000);
@@ -156,25 +154,30 @@ void print_lcd_frequency(long input) {
   number[2] = freq / 10;
   freq = freq % 10;
   number[3] = freq;
+  for (int i = 0; i < 4; i++) { 
+    Serial.print(number[i]); 
+    Serial.print("\t");
+  }
+  Serial.println();
 }
 
 void led7segWriteDigit(int digit, int value) {
   if (digit < 4) {
     if (value < 16) {
       // blank all       
-      for (int i=0; i<4; i++) {
-        digitalWrite(anodepins[i],LOW);
+      for (int i = 0; i < 4; i++) {
+        digitalWrite(anodepins[i], HIGH);
       }
-
-      if (digit==3) (digitalWrite(dp,LOW));
-      else (digitalWrite(dp,HIGH));
-
-      for (int i=0; i<4; i++) {
-        digitalWrite(ls247pins[i],(bitRead(value,i)));
+      // set decimal point
+      if (digit == 3) (digitalWrite(dp, LOW));
+      else (digitalWrite(dp, HIGH));
+      // write incoming integer value to 7 segment display
+      for (int i = 0; i < 4; i++) {
+        digitalWrite(ls247pins[i], (bitRead(value, i)));
       } 
     }
     // turn on the appropriate digit
-    digitalWrite(anodepins[digit],HIGH);
+    digitalWrite(anodepins[digit], LOW);
   }
   delay(1);
 }
@@ -184,17 +187,15 @@ void led7segWriteDigit(int digit, int value) {
 ///////////////
 
 void doEncoder() {
-  // If pinA and pinB are both high or both low, it is spinning
-  // forward. If they're different, it's going backward.
+  // If pinA and pinB are both high or both low, the encoder is spinning forward.
+  // If they're different, it's going backward.
   if (digitalRead(encoderPinA) == digitalRead(encoderPinB)) {
     frequency -= incrFM; 
-    delay(200);
-    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range
+    frequency = constrain(frequency, botFM, topFM);  // Keeps us in range
   } 
   else {
     frequency += incrFM; 
-    delay(200);
-    frequency = constrain( frequency, botFM, topFM);  // Keeps us in range
+    frequency = constrain(frequency, botFM, topFM);  // Keeps us in range
   }
 }
 
@@ -207,7 +208,7 @@ void transmitter_setup(long initFrequency) {
   i2c_send(0x01, B10110100); // Register 1: forced subcarrier, pilot tone on
   i2c_send(0x02, B00000011); // Register 2: Unlock detect off, 2mW Tx Power
 
-  set_freq( initFrequency);
+  set_freq(initFrequency);
 
   //i2c_send(0x00, B10100001); // Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power on
   i2c_send(0x00, B00100001); // Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power on
@@ -301,6 +302,7 @@ long loadFrequency() {
   //Serial.println(memFrequency, DEC);
   return memFrequency;
 }
+
 
 
 
