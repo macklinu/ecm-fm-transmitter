@@ -1,7 +1,6 @@
 /** 
  * ECM Standalone FM Transmitter
  *
- *
  * A lot of code and circuit was guided by http://www.km5z.us/FM-Stereo-Broadcaster.php
  *
  */
@@ -17,8 +16,8 @@
 #define encoderSwitch 4
 
 int encoderPos = 0; // initial encoder position
-int lastButtonState = LOW; // initial button state
-int buttonState; // current button state
+int lastEncoderSwitchState = LOW; // initial button state
+int encoderSwitchState; // current button state
 long lastDebounceTime = 0; // temporary debounce time storage
 long debounceDelay = 50; // debounce time
 
@@ -48,12 +47,12 @@ void setup() {
 }
 
 void loop() {
-  readSwitch();
-  setDisplayFrequency(frequency);
-  for (int i = 0; i < 4; i++) {
+  readSwitch(); // check if the switch on the encoder has been pressed
+  setDisplayFrequency(frequency); // prepare current frequency for 7 segment display
+  for (int i = 0; i < 4; i++) { // display the frequency on the 7 segment display
     led7segWriteDigit(i, number[i]);
   }
-  checkSerial();
+  checkSerial(); // check for serial info from Max to set a frequency that way
 }
 
 ///////////////////
@@ -104,8 +103,8 @@ void checkSerial() {
         set_freq(frequency);
         saveFrequency(frequency); // save the frequency to EEPROM
         // write the incoming messages for debugging in Max
-        Serial.write(serialArray[0]);
-        Serial.write(serialArray[1]);
+        // Serial.write(serialArray[0]);
+        // Serial.write(serialArray[1]);
         // reset the serial count to receive the next message
         serialCount = 0;
       }
@@ -115,35 +114,34 @@ void checkSerial() {
 
 void readSwitch() {
   int reading = digitalRead(encoderSwitch); // read encoder switch
-  if (reading != lastButtonState) {
+  if (reading != lastEncoderSwitchState) {
     lastDebounceTime = millis(); // start debouncing
   }
   if ((millis() - lastDebounceTime) > debounceDelay) {
-    buttonState = reading; // we're past the debounce period, so read the button press
+    encoderSwitchState = reading; // we're past the debounce period, so read the button press
   }
   // when the button is pressed
-  if (buttonState == LOW) {
+  if (encoderSwitchState == LOW) {
     // go into standby
     if (gOnAir) {
       transmitter_standby(frequency);
-      buttonState = HIGH;
+      encoderSwitchState = HIGH;
     }
     // then set the new frequency
     else {
       set_freq(frequency);
       saveFrequency(frequency); // save the Frequency to EEPROM Memory
       delay(1000);
-      buttonState = HIGH;
+      encoderSwitchState = HIGH;
     }
   }
-  lastButtonState = reading;
+  lastEncoderSwitchState = reading;
 }
 
 // display frequency on 7 segment display
 void setDisplayFrequency(long input) {
-  int freq;
-
-  freq = (int) (input / 100000);
+  // int freq;
+  int freq = (int) (input / 100000);
   number[0] = freq / 1000; // should be 0 or 1
   if (number[0] == 0) number[0] = 15; // display blank LCD character
   freq = freq % 1000;
@@ -198,58 +196,34 @@ void transmitter_setup(long initFrequency) {
 
   set_freq(initFrequency);
 
-  //i2c_send(0x00, B10100001); // Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power on
+  // i2c_send(0x00, B10100001); // Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power on
   i2c_send(0x00, B00100001); // Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power on
   i2c_send(0x0E, B00000101); // Software reset
   i2c_send(0x06, B00011110); // Register 6: charge pumps at 320uA and 80 uA
 }
 
 void transmitter_standby(long aFrequency) {
-  //i2c_send(0x00, B10100000); // Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power OFF
+  // i2c_send(0x00, B10100000); // Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power OFF
   i2c_send(0x00, B00100000); // Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power OFF
-
   delay(100);
   gOnAir = false;
 }
 
 void set_freq(long aFrequency) {
   int new_frequency;
-
-  // New Range Checking... Implement the (experimentally determined) VFO bands:
-  if (aFrequency < 88500000) { // Band 3
-    i2c_send(0x08, B00011011);
-    // Serial.println("Band 3");
-  }  
-  else if (aFrequency < 97900000) { // Band 2
-    i2c_send(0x08, B00011010);
-    // Serial.println("Band 2");
-  }
-  else if (aFrequency < 103000000) { // Band 1 
-    i2c_send(0x08, B00011001);
-    // Serial.println("Band 1");
-  }
-  else { // Band 0
-    // Must be OVER 103.000.000, 
-    i2c_send(0x08, B00011000);
-    // Serial.println("Band 0");
-  }
+  
+  // new range checking; implement the (experimentally determined) VFO bands:
+  if (aFrequency < 88500000) i2c_send(0x08, B00011011); // band 3
+  else if (aFrequency < 97900000) i2c_send(0x08, B00011010); // band 2
+  else if (aFrequency < 103000000) i2c_send(0x08, B00011001); // band 1 
+  else i2c_send(0x08, B00011000); // band 0
 
   new_frequency = (aFrequency + 304000) / 8192;
   byte reg3 = new_frequency & 255; // extract low byte of frequency register
   byte reg4 = new_frequency >> 8; // extract high byte of frequency register
   i2c_send(0x03, reg3); // send low byte
   i2c_send(0x04, reg4); // send high byte
-
-  // Retain old 'band set' code for reference....  
-  // if (new_frequency <= 93100000) { i2c_send(0x08, B00011011); }
-  // if (new_frequency <= 96900000) { i2c_send(0x08, ); }
-  // if (new_frequency <= 99100000) { i2c_send(0x08, B00011001); }
-  // if (new_frequency >  99100000) { i2c_send(0x08, B00011000); }
-
   i2c_send(0x0E, B00000101); // software reset  
-
-  // Serial.print("Frequency changed to ");
-  // Serial.println(aFrequency, DEC);
 
   // i2c_send(0x00, B10100001); // Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power ON
   i2c_send(0x00, B00100001); // Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power ON
@@ -271,10 +245,6 @@ void i2c_send(byte reg, byte data) {
 
 void saveFrequency(long aFrequency) {
   long memFrequency = 0; // for use in read/write to EEPROM
-
-  //Serial.print( "Saving: " );
-  //Serial.println(aFrequency, DEC);
-
   memFrequency = aFrequency / 10000;
   EEPROM.write(0, memFrequency / 256); // right-most byte
   EEPROM.write(1, memFrequency - (memFrequency / 256) * 256); // next to right-most byte
@@ -282,17 +252,7 @@ void saveFrequency(long aFrequency) {
 
 long loadFrequency() {
   long memFrequency = 0; // for use in read/write to EEPROM
-
   memFrequency = EEPROM.read(0) * 256 + EEPROM.read(1);
   memFrequency *= 10000;
-
-  //Serial.print("Retrieving: " );
-  //Serial.println(memFrequency, DEC);
   return memFrequency;
 }
-
-
-
-
-
-
