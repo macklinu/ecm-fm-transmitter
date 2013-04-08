@@ -22,8 +22,7 @@ int buttonState; // current button state
 long lastDebounceTime = 0; // temporary debounce time storage
 long debounceDelay = 50; // debounce time
 
-byte number[4]; // = { // number to be displayed on the 7 segment display
-  // 15, 15, 15, 7};
+byte number[4]; // number to be displayed on the 7 segment display
 byte ls247pins[] = {
   12, 10, 8, 6};
 byte anodepins[] = {
@@ -49,8 +48,7 @@ void setup() {
 }
 
 void loop() {
-  readEncoder();
-  // Serial.println( frequency, DEC );
+  readSwitch();
   setDisplayFrequency(frequency);
   for (int i = 0; i < 4; i++) {
     led7segWriteDigit(i, number[i]);
@@ -115,8 +113,8 @@ void checkSerial() {
   }
 }
 
-void readEncoder() {
-  int reading = digitalRead(encoderSwitch); // read encoder button pin
+void readSwitch() {
+  int reading = digitalRead(encoderSwitch); // read encoder switch
   if (reading != lastButtonState) {
     lastDebounceTime = millis(); // start debouncing
   }
@@ -154,32 +152,22 @@ void setDisplayFrequency(long input) {
   number[2] = freq / 10;
   freq = freq % 10;
   number[3] = freq;
-  for (int i = 0; i < 4; i++) { 
-    Serial.print(number[i]); 
-    Serial.print("\t");
-  }
-  Serial.println();
 }
 
 void led7segWriteDigit(int digit, int value) {
-  if (digit < 4) {
-    if (value < 16) {
-      // blank all       
-      for (int i = 0; i < 4; i++) {
-        digitalWrite(anodepins[i], HIGH);
-      }
-      // set decimal point
-      if (digit == 3) (digitalWrite(dp, LOW));
-      else (digitalWrite(dp, HIGH));
-      // write incoming integer value to 7 segment display
-      for (int i = 0; i < 4; i++) {
-        digitalWrite(ls247pins[i], (bitRead(value, i)));
-      } 
-    }
-    // turn on the appropriate digit
-    digitalWrite(anodepins[digit], LOW);
-  }
-  delay(1);
+  // turn off the previous led
+  if (digit == 0) digitalWrite(anodepins[3], HIGH);
+  else digitalWrite(anodepins[digit-1], HIGH);
+  // set decimal point
+  if (digit == 3) (digitalWrite(dp, LOW));
+  else (digitalWrite(dp, HIGH));
+  // write incoming integer value to 7 segment display
+  for (int i = 0; i < 4; i++) {
+    digitalWrite(ls247pins[i], (bitRead(value, i)));
+  } 
+  // turn on the appropriate digit
+  digitalWrite(anodepins[digit], LOW);
+  delay(5);
 }
 
 ///////////////
@@ -302,6 +290,8 @@ long loadFrequency() {
   //Serial.println(memFrequency, DEC);
   return memFrequency;
 }
+
+
 
 
 
