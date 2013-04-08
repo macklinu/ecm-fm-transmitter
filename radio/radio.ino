@@ -193,9 +193,7 @@ void transmitter_setup(long initFrequency) {
   i2c_send(0x0E, B00000101); // Software reset
   i2c_send(0x01, B10110100); // Register 1: forced subcarrier, pilot tone on
   i2c_send(0x02, B00000011); // Register 2: Unlock detect off, 2mW Tx Power
-
-  set_freq(initFrequency);
-
+  set_freq(initFrequency); // set the frequency
   // i2c_send(0x00, B10100001); // Register 0: 200mV audio input, 75us pre-emphasis on, crystal off, power on
   i2c_send(0x00, B00100001); // Register 0: 100mV audio input, 75us pre-emphasis on, crystal off, power on
   i2c_send(0x0E, B00000101); // Software reset
